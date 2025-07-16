@@ -23,6 +23,6 @@ async def hours_long_test_flow():
 if __name__ == "__main__":
     # Deploy the flow to the specified work pool
     flow.from_source(
-        source="git@github.com:molonc/iris-mondrian-analysis.git",
+        source="git@github.com:simalicrum/shell-test.git",
         entrypoint="shell_test.py:hours_long_test_flow",
     ).deploy(name="hours_long_test_flow", work_pool_name="hpc1-pool", work_queue_name="default")
