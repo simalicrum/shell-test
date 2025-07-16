@@ -9,6 +9,7 @@ async def hours_long_sleep_task(hours=2):
     with ShellOperation(commands=[f"sleep {seconds}"]) as sleep_operation:
         sleep_process = await sleep_operation.trigger()
         await sleep_process.wait_for_completion()
+        result = sleep_process.result()
 
 
 @flow
