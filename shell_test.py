@@ -44,16 +44,14 @@ async def run_nextflow(working_dir):
 
     logger.info(f"Nextflow process PID: {process.pid}")
 
-    # Monitor the process
+    # Monitor the process while it's running
     while process.returncode is None:
         logger.info(f"Nextflow process PID: {process.pid}")
         logger.info(f"Nextflow process return code: {process.returncode}")
         await asyncio.sleep(5)
 
-        # Check if process is still running
-        try:
-            process.poll()
-        except ProcessLookupError:
+        # Check if process has finished
+        if process.returncode is not None:
             break
 
     stdout, stderr = await process.communicate()
