@@ -1,7 +1,11 @@
-import time
+import asyncio
+import os
+import signal
+import subprocess
 
 from prefect import flow, task
 from prefect.logging import get_run_logger
+from prefect.runtime.task_run import TaskRunContext
 from prefect_shell import ShellOperation
 
 
@@ -18,32 +22,60 @@ async def hours_long_sleep_task(hours=2):
 
 
 @task
-async def run_nextflow(working_dir):
-    """Run the next flow after the sleep operation"""
-    # Wrap the nextflow command in setsid to create a new process group
-    # This ensures all child processes are killed when the parent is terminated
-    logger = get_run_logger()
-    logger.info("Starting Nextflow operation...")
-    commands = [
-        (
-            "exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
-            "-r v0.1.8 "
-            "-params-file params.yaml "
-            "-profile singularity,slurm "
-            "-with-report report.html "
-            "-with-timeline timeline.html "
-            "-resume "
-            "-ansi-log false"
-        )
-    ]
+async def run_nextflow(version: str):
+    log = get_run_logger()
 
-    with ShellOperation(commands=commands, working_dir=working_dir) as nextflow_operation:
-        nextflow_process = await nextflow_operation.trigger()
-        while True:
-            logger.info(f"Nextflow process PID: {nextflow_process.pid}")
-            logger.info(f"Nextflow process return code: {nextflow_process.return_code}")
-            time.sleep(5)
-        await nextflow_process.wait_for_completion()
+    # 1️⃣ Spawn in new process group
+    proc = subprocess.Popen(
+        [
+            "/shared/mondrian/nextflow",
+            "-q",
+            "run",
+            "https://github.com/molonc/mondrian_nf",
+            "-r",
+            version,
+        ],
+        start_new_session=True,  # key!
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        pgid = os.getpgid(proc.pid)
+    except AttributeError:
+        pgid = proc.pid
+    log.info(f"Started Nextflow PID={proc.pid} PGID={pgid}")
+
+    # 2️⃣ Attach cancel callback
+    ctx = TaskRunContext.get()
+    ctx.cancel_scope.add_cancel_callback(lambda *_: _kill_pgid(pgid, log))
+
+    # 3️⃣ Stream logs and wait
+    async for line in _async_lines(proc):
+        log.info(line.strip())
+
+    rc = await asyncio.to_thread(proc.wait)
+    if rc != 0:
+        raise RuntimeError(f"Nextflow exited with {rc}")
+
+
+def _kill_pgid(pgid, log):
+    try:
+        log.warning(f"Cancelling... sending SIGTERM to PGID {pgid}")
+        os.killpg(pgid, signal.SIGTERM)
+        asyncio.run(asyncio.sleep(15))
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+async def _async_lines(proc):
+    loop = asyncio.get_running_loop()
+    while True:
+        line = await loop.run_in_executor(None, proc.stdout.readline)
+        if not line:
+            break
+        yield line
 
 
 @flow
