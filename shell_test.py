@@ -2,7 +2,13 @@ from prefect import flow, task
 from prefect_shell import ShellOperation
 
 
-@task
+@task(
+    on_failure=[
+        lambda task, task_run, state,: print(f"Task {task.name} failed with state: {state}"),
+    ],
+    retries=3,
+    retry_delay_seconds=10,
+)
 async def hours_long_sleep_task(hours=2):
     """Simulate a process that runs for hours - simple sleep"""
     seconds = hours * 3600
