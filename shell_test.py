@@ -21,14 +21,14 @@ def run_nextflow(working_dir):
     # This ensures all child processes are killed when the parent is terminated
     commands = [
         (
-            "setsid bash -c 'exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
+            "exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
             "-r v0.1.8 "
             "-params-file params.yaml "
             "-profile singularity,slurm "
             "-with-report report.html "
             "-with-timeline timeline.html "
             "-resume "
-            "-ansi-log false'"
+            "-ansi-log false"
         )
     ]
 
