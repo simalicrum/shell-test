@@ -15,20 +15,32 @@ def hours_long_sleep_task(hours=2):
 @task
 def run_nextflow(working_dir):
     """Run the next flow after the sleep operation"""
-    commands = ["nextflow run main.nf"]
+    commands = [
+        (
+            "/shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
+            "-r v0.1.8 "
+            "-params-file params.yaml "
+            "-profile singularity,slurm "
+            "-with-report report.html "
+            "-with-timeline timeline.html "
+            "-resume "
+            "-ansi-log false"
+        )
+    ]
     with ShellOperation(commands=commands, working_dir=working_dir) as nextflow_operation:
         nextflow_process = nextflow_operation.trigger()
         nextflow_process.wait_for_completion()
-        result = nextflow_process.result()
+        # result = nextflow_process.result()
 
 
 @flow
-def hours_long_test_flow():
-    """Test 2-hour sleep operation"""
-    print("Starting 2-hour sleep test...")
+def hours_long_test_flow(working_dir):
+    # """Test 2-hour sleep operation"""
+    # print("Starting 2-hour sleep test...")
 
-    sleep_result = hours_long_sleep_task(hours=2)
-    print(f"2-hour sleep completed: {sleep_result.return_code}")
+    # sleep_result = hours_long_sleep_task(hours=2)
+    # print(f"2-hour sleep completed: {sleep_result.return_code}")
+    run_nextflow(working_dir=working_dir)
 
 
 if __name__ == "__main__":
