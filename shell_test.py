@@ -1,5 +1,10 @@
+import time
+
 from prefect import flow, task
+from prefect.logging import get_run_logger
 from prefect_shell import ShellOperation
+
+logger = get_run_logger()
 
 
 @task
@@ -19,6 +24,7 @@ async def run_nextflow(working_dir):
     """Run the next flow after the sleep operation"""
     # Wrap the nextflow command in setsid to create a new process group
     # This ensures all child processes are killed when the parent is terminated
+    logger.info("Starting Nextflow operation...")
     commands = [
         (
             "exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
@@ -34,6 +40,10 @@ async def run_nextflow(working_dir):
 
     with ShellOperation(commands=commands, working_dir=working_dir) as nextflow_operation:
         nextflow_process = await nextflow_operation.trigger()
+        while True:
+            logger.info(f"Nextflow process PID: {nextflow_process.pid}")
+            logger.info(f"Nextflow process return code: {nextflow_process.return_code}")
+            time.sleep(5)
         await nextflow_process.wait_for_completion()
 
 
