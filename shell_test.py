@@ -4,8 +4,6 @@ from prefect import flow, task
 from prefect.logging import get_run_logger
 from prefect_shell import ShellOperation
 
-logger = get_run_logger()
-
 
 @task
 async def hours_long_sleep_task(hours=2):
@@ -24,6 +22,7 @@ async def run_nextflow(working_dir):
     """Run the next flow after the sleep operation"""
     # Wrap the nextflow command in setsid to create a new process group
     # This ensures all child processes are killed when the parent is terminated
+    logger = get_run_logger()
     logger.info("Starting Nextflow operation...")
     commands = [
         (
