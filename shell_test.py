@@ -6,31 +6,36 @@ from prefect_shell import ShellOperation
 def hours_long_sleep_task(hours=2):
     """Simulate a process that runs for hours - simple sleep"""
     seconds = hours * 3600
-    with ShellOperation(commands=[f"sleep {seconds}"]) as sleep_operation:
+    # Use setsid to create a new process group, so all children are killed together
+    command = f"setsid bash -c 'sleep {seconds}'"
+
+    with ShellOperation(commands=[command]) as sleep_operation:
         sleep_process = sleep_operation.trigger()
         sleep_process.wait_for_completion()
-        # result = sleep_process.result()
 
 
 @task
 def run_nextflow(working_dir):
     """Run the next flow after the sleep operation"""
-    commands = [
-        (
-            "/shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
-            "-r v0.1.8 "
-            "-params-file params.yaml "
-            "-profile singularity,slurm "
-            "-with-report report.html "
-            "-with-timeline timeline.html "
-            "-resume "
-            "-ansi-log false"
-        )
-    ]
-    with ShellOperation(commands=commands, working_dir=working_dir) as nextflow_operation:
+    # Wrap the nextflow command in setsid to create a new process group
+    # This ensures all child processes are killed when the parent is terminated
+    nextflow_cmd = (
+        "/shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
+        "-r v0.1.8 "
+        "-params-file params.yaml "
+        "-profile singularity,slurm "
+        "-with-report report.html "
+        "-with-timeline timeline.html "
+        "-resume "
+        "-ansi-log false"
+    )
+
+    # Use setsid to create a new process group
+    command = f"setsid bash -c '{nextflow_cmd}'"
+
+    with ShellOperation(commands=[command], working_dir=working_dir) as nextflow_operation:
         nextflow_process = nextflow_operation.trigger()
         nextflow_process.wait_for_completion()
-        # result = nextflow_process.result()
 
 
 @flow
