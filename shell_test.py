@@ -19,21 +19,20 @@ def run_nextflow(working_dir):
     """Run the next flow after the sleep operation"""
     # Wrap the nextflow command in setsid to create a new process group
     # This ensures all child processes are killed when the parent is terminated
-    nextflow_cmd = (
-        "/shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
-        "-r v0.1.8 "
-        "-params-file params.yaml "
-        "-profile singularity,slurm "
-        "-with-report report.html "
-        "-with-timeline timeline.html "
-        "-resume "
-        "-ansi-log false"
-    )
+    commands = [
+        (
+            "exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
+            "-r v0.1.8 "
+            "-params-file params.yaml "
+            "-profile singularity,slurm "
+            "-with-report report.html "
+            "-with-timeline timeline.html "
+            "-resume "
+            "-ansi-log false"
+        )
+    ]
 
-    # Use setsid to create a new process group
-    command = f"setsid bash -c '{nextflow_cmd}'"
-
-    with ShellOperation(commands=[command], working_dir=working_dir) as nextflow_operation:
+    with ShellOperation(commands=commands, working_dir=working_dir) as nextflow_operation:
         nextflow_process = nextflow_operation.trigger()
         nextflow_process.wait_for_completion()
 
