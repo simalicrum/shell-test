@@ -1,81 +1,70 @@
 import asyncio
-import os
-import signal
 import subprocess
 
 from prefect import flow, task
 from prefect.logging import get_run_logger
-from prefect.runtime.task_run import TaskRunContext
-from prefect_shell import ShellOperation
 
 
 @task
 async def hours_long_sleep_task(hours=2):
     """Simulate a process that runs for hours - simple sleep"""
     seconds = hours * 3600
-    # Use setsid to create a new process group, so all children are killed together
+    # Use subprocess to run the sleep command
     command = f"setsid bash -c 'sleep {seconds}'"
 
-    with ShellOperation(commands=[command]) as sleep_operation:
-        sleep_process = await sleep_operation.trigger()
-        await sleep_process.wait_for_completion()
+    process = await asyncio.create_subprocess_shell(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+    return process.returncode
 
 
 @task
-async def run_nextflow(version: str):
-    log = get_run_logger()
+async def run_nextflow(working_dir):
+    """Run the next flow after the sleep operation"""
+    logger = get_run_logger()
+    logger.info("Starting Nextflow operation...")
 
-    # 1️⃣ Spawn in new process group
-    proc = subprocess.Popen(
-        [
-            "/shared/mondrian/nextflow",
-            "-q",
-            "run",
-            "https://github.com/molonc/mondrian_nf",
-            "-r",
-            version,
-        ],
-        start_new_session=True,  # key!
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+    command = (
+        "exec /shared/mondrian/nextflow -q run https://github.com/molonc/mondrian_nf "
+        "-r v0.1.8 "
+        "-params-file params.yaml "
+        "-profile singularity,slurm "
+        "-with-report report.html "
+        "-with-timeline timeline.html "
+        "-resume "
+        "-ansi-log false"
     )
-    try:
-        pgid = os.getpgid(proc.pid)
-    except AttributeError:
-        pgid = proc.pid
-    log.info(f"Started Nextflow PID={proc.pid} PGID={pgid}")
 
-    # 2️⃣ Attach cancel callback
-    ctx = TaskRunContext.get()
-    ctx.cancel_scope.add_cancel_callback(lambda *_: _kill_pgid(pgid, log))
+    # Create subprocess and run in the specified working directory
+    process = await asyncio.create_subprocess_shell(
+        command, cwd=working_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
-    # 3️⃣ Stream logs and wait
-    async for line in _async_lines(proc):
-        log.info(line.strip())
+    logger.info(f"Nextflow process PID: {process.pid}")
 
-    rc = await asyncio.to_thread(proc.wait)
-    if rc != 0:
-        raise RuntimeError(f"Nextflow exited with {rc}")
+    # Monitor the process
+    while process.returncode is None:
+        logger.info(f"Nextflow process PID: {process.pid}")
+        logger.info(f"Nextflow process return code: {process.returncode}")
+        await asyncio.sleep(5)
 
-
-def _kill_pgid(pgid, log):
-    try:
-        log.warning(f"Cancelling... sending SIGTERM to PGID {pgid}")
-        os.killpg(pgid, signal.SIGTERM)
-        asyncio.run(asyncio.sleep(15))
-        os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-async def _async_lines(proc):
-    loop = asyncio.get_running_loop()
-    while True:
-        line = await loop.run_in_executor(None, proc.stdout.readline)
-        if not line:
+        # Check if process is still running
+        try:
+            process.poll()
+        except ProcessLookupError:
             break
-        yield line
+
+    stdout, stderr = await process.communicate()
+    logger.info(f"Nextflow process completed with return code: {process.returncode}")
+
+    if stdout:
+        logger.info(f"STDOUT: {stdout.decode()}")
+    if stderr:
+        logger.error(f"STDERR: {stderr.decode()}")
+
+    return process.returncode
 
 
 @flow
